@@ -7,4 +7,8 @@ CONF_POLL_INTERVAL = "poll_interval"
 
 DEFAULT_POLL_INTERVAL = 30
 
-PLATFORMS = ["alarm_control_panel"]
+PLATFORMS = [
+    "alarm_control_panel",
+    "binary_sensor",
+    "sensor",
+]

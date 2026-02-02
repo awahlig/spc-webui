@@ -1,25 +1,61 @@
 import logging
 import re
 import ssl
+from pathlib import Path
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
 
 
-RE_TITLE = re.compile(r"<title>([^<]+?)</title>", re.IGNORECASE)
-RE_SERIAL = re.compile(r"S/N:\s*([0-9A-Za-z]+)")
-RE_LOGIN = re.compile(r"\baction=login\b", re.IGNORECASE)
-RE_SESSION = re.compile(r"(?:\?|&)session=(0x[0-9A-Fa-f]+)")
-RE_DENIED = re.compile(r"\bAccess\s+denied\b", re.IGNORECASE)
+# Page: any
+RE_TITLE = re.compile(
+    r"<title>([^<]+?)</title>",
+    re.IGNORECASE
+)
 
-RE_STATE = re.compile(
-    r"""
-    <tr\b[^>]*>                         # start table row
-    (?:(?!</tr>).)*?                    # anything, not crossing end of row
-    <td\b[^>]*>\s*All\s+Areas\s*</td>   # the "All Areas" cell
-    \s*<td\b[^>]*>\s*([^<]+?)\s*</td>   # next cell = state text
-    """,
-    re.IGNORECASE | re.DOTALL | re.VERBOSE,
+# Page: any after logging in
+RE_SERIAL = re.compile(
+    r"S/N:\s*([0-9A-Za-z]+)"
+)
+RE_SESSION = re.compile(
+    r"(?:\?|&)session=(0x[0-9A-Fa-f]+)"
+)
+
+# Page: login
+RE_LOGIN = re.compile(
+    r"\baction=login\b",
+    re.IGNORECASE
+)
+RE_DENIED = re.compile(
+    r"\bAccess\s+denied\b",
+    re.IGNORECASE
+)
+
+# Page: system_summary
+RE_ARM_STATE = re.compile(
+    r">All Areas</td><td[^>]*>([^<]+)</td>",
+    re.IGNORECASE,
+)
+RE_IMPORTANT = re.compile(
+    r"<font[^>]*color=red[^>]*><b>(.*?)</b></font>",
+    re.IGNORECASE | re.DOTALL
+)
+
+# Page: status_zones
+RE_ZONE = re.compile(
+    r"<TR\s+HEIGHT=20>"
+    # (1) zone id, (2) zone name
+    r"\s*<TD\s+ALIGN=\"center\">(\d+)\s+([^<]+)</TD>"
+    # (3) area id, (4) area name
+    r"\s*<TD\s+ALIGN=\"center\">(\d+)\s+([^<]+)</TD>"
+    # (5) zone type
+    r"\s*<TD\s+ALIGN=\"center\">([^<]+)</TD>"
+    # (6) commented input status
+    r".*?<!--.*?<font[^>]*>(?:<b>)?([^<]+)(?:</b>)?</font>.*?-->"
+    # (7) active status
+    r"\s*<TD\s+ALIGN=\"center\"><FONT\s+COLOR=\w+>(?:<B>)?([^<]+)(?:</B>)?</FONT></TD>",
+    re.IGNORECASE | re.DOTALL
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -88,15 +124,36 @@ def parse_session_id(html):
     re_match = RE_SESSION.search(html)
     if re_match:
         return re_match.group(1)
-    raise ValueError("Session ID not found in HTML")
+    raise SPCParseError("Session ID not found in HTML")
 
 
-def parse_alarm_state(html):
-    """Pull out the All Areas alarm state text from the system summary table."""
-    re_match = RE_STATE.search(html)
+def parse_arm_state(html):
+    """Pull out the arm state text from the system summary page."""
+    re_match = RE_ARM_STATE.search(html)
     if re_match:
         return re_match.group(1).strip().lower()
-    raise ValueError("Alarm state not found in HTML")
+    raise SPCParseError("Arm state not found in HTML")
+
+
+def parse_important_message(html):
+    """Pull out the red banner message. Returns None if not found."""
+    re_match = RE_IMPORTANT.search(html)
+    if re_match:
+        return re_match.group(1).strip()
+
+
+def parse_zones(html):
+    """Pull out the zones."""
+    for m in RE_ZONE.finditer(html):
+        yield {
+            "zone_id": int(m.group(1)),
+            "zone_name": m.group(2).strip(),
+            "area_id": int(m.group(3)),
+            "area_name": m.group(4).strip(),
+            "zone_type": m.group(5).strip().lower(),
+            "input": m.group(6).strip().lower(),
+            "status": m.group(7).strip().lower(),
+        }
 
 
 def is_login_page(html):
@@ -107,7 +164,19 @@ def is_access_denied(html):
     return bool(RE_DENIED.search(html))
 
 
-class SPCLoginError(Exception):
+class SPCError(Exception):
+    pass
+
+
+class SPCParseError(SPCError):
+    pass
+
+
+class SPCLoginError(SPCError):
+    pass
+
+
+class SPCCommandError(SPCError):
     pass
 
 
@@ -168,24 +237,26 @@ class SPCSession:
         self.sid = parse_session_id(html)
         self.serial_number = parse_serial_number(html)
 
-    async def get_state(self):
-        """Fetch current All Areas state, handling re-login if needed."""
+    async def get_arm_state(self):
+        """Fetch current global arm state."""
         async def do():
             url = f"/secure.htm?session={self.sid}&page=system_summary&language=0"
             resp = await self.client.get(url)
             return self._get_html(resp)
 
         html = await self._do_with_login(do)
-        return parse_alarm_state(html)
+        return parse_arm_state(html)
 
-    async def set_state(self, state):
-        """Send an arm/disarm command and return the resulting state."""
-        if state == "unset":
+    async def set_arm_state(self, arm_state):
+        """Send a command to change the global arm state."""
+        if arm_state == "unset":
             data = {"unset_all_areas": "Unset"}
-        elif state == "fullset":
+        elif arm_state == "fullset":
             data = {"fullset_area1": "Fullset"}
+        elif arm_state == "forceset":
+            data = {"fullset_force1": "Force set"}
         else:
-            raise ValueError(f"{state}: unknown state")
+            raise SPCCommandError(f"{arm_state}: unknown arm state")
 
         async def do():
             url = f"/secure.htm?session={self.sid}&page=system_summary&language=0&action=update"
@@ -193,4 +264,17 @@ class SPCSession:
             return self._get_html(resp)
 
         html = await self._do_with_login(do)
-        return parse_alarm_state(html)
+        msg = parse_important_message(html)
+        if msg:
+            raise SPCCommandError(msg)
+        return parse_arm_state(html)
+
+    async def get_zones(self):
+        """Fetch a list of zones."""
+        async def do():
+            url = f"/secure.htm?session={self.sid}&page=status_zones&language=0"
+            resp = await self.client.get(url)
+            return self._get_html(resp)
+
+        html = await self._do_with_login(do)
+        return list(parse_zones(html))

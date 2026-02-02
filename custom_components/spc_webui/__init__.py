@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -16,7 +17,7 @@ from .const import (
     CONF_POLL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
 )
-from .spc import SPCSession, SPCLoginError
+from .spc import SPCSession, SPCError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -38,9 +39,13 @@ async def async_setup_entry(hass, entry):
 
     async def update():
         try:
-            return await spc.get_state()
+            return {
+                "arm_state": await spc.get_arm_state(),
+                "zones": {z["zone_id"]: z
+                          for z in await spc.get_zones()},
+            }
         
-        except SPCLoginError as e:
+        except SPCError as e:
             # Treat as hard failure. Show unavailable.
             raise UpdateFailed(str(e)) from e
         
@@ -58,10 +63,19 @@ async def async_setup_entry(hass, entry):
     )
     await coordinator.async_config_entry_first_refresh()
 
+    device_info = DeviceInfo({
+        "identifiers": {(DOMAIN, spc.serial_number)},
+        "name": (spc.site or spc.model or "SPC Panel"),
+        "manufacturer": "Vanderbilt",
+        "model": spc.model,
+        "serial_number": spc.serial_number,
+    })
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "spc": spc,
         "coordinator": coordinator,
+        "device_info": device_info,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
