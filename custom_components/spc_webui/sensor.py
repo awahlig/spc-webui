@@ -28,6 +28,7 @@ class SPCZoneStatus(CoordinatorEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_has_entity_name = True
+    _attr_translation_key = "zone_status"
     _attr_options = [
         "normal",
         "open",

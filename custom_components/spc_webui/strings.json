@@ -25,5 +25,18 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "zone_status": {
+        "state": {
+          "normal": "Normal",
+          "open": "Open",
+          "tamper": "Tamper",
+          "disconnected": "Disconnected",
+          "inhibited": "Inhibited"
+        }
+      }
+    }
   }
 }
