@@ -34,7 +34,7 @@
           "actuated": "Actuated",
           "tamper": "Tamper",
           "disconnected": "Disconnected",
-          "inhibited": "Inhibited"
+          "inhibit": "Inhibit"
         }
       }
     }
