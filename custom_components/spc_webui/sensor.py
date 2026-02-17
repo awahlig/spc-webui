@@ -34,7 +34,7 @@ class SPCZoneStatus(CoordinatorEntity, SensorEntity):
         "actuated",
         "tamper",
         "disconnected",
-        "inhibited",
+        "inhibit",
     ]
 
     def __init__(self, coordinator, device_info, zone):
