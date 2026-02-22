@@ -23,7 +23,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     device_info = data["device_info"]
 
     async_add_entities([
-        SPCZoneInput(
+        SPCZoneOpen(
             coordinator=coordinator,
             device_info=device_info,
             zone=zone,
