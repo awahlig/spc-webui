@@ -12,4 +12,5 @@ PLATFORMS = [
     "alarm_control_panel",
     "binary_sensor",
     "sensor",
+    "switch",
 ]

@@ -51,9 +51,9 @@ RE_ZONE = re.compile(
     r"\s*<TD\s+ALIGN=\"center\">(\d+)\s+([^<]+)</TD>"
     # (5) zone type
     r"\s*<TD\s+ALIGN=\"center\">([^<]+)</TD>"
-    # (6) commented input status
+    # (6) (commented out) input state
     r".*?<!--.*?<font[^>]*>(?:<b>)?([^<]+)(?:</b>)?</font>.*?-->"
-    # (7) active status
+    # (7) status
     r"\s*<TD\s+ALIGN=\"center\"><FONT\s+COLOR=\w+>(?:<B>)?([^<]+)(?:</B>)?</FONT></TD>",
     re.IGNORECASE | re.DOTALL
 )
@@ -150,9 +150,12 @@ def parse_zones(html):
             "zone_name": m.group(2).strip(),
             "area_id": int(m.group(3)),
             "area_name": m.group(4).strip(),
+            # Alarm, Entry/Exit, ...
             "zone_type": m.group(5).strip().lower(),
             # For inhibited zones, this shows the underlying status
+            # Open, Closed, DISCON, ...
             "input": m.group(6).strip().lower(),
+            # Normal, Tamper, Inhibit, ...
             "status": m.group(7).strip().lower(),
         }
 
@@ -212,15 +215,17 @@ class SPCSession:
         """Close the underlying HTTPX client."""
         await self.client.aclose()
 
+    def _get_secure_url(self, page, update=False):
+        action = ("&action=update" if update else "")
+        return f"/secure.htm?session={self.sid}&page={page}&language=0{action}"
+
     def _get_html(self, resp):
-        """Raise for HTTP errors, parse page title metadata, and return HTML."""
         resp.raise_for_status()
         html = resp.text
         self.model, self.site = parse_title(html)
         return html
 
     async def _do_with_login(self, do):
-        """Run a coroutine, retrying once after login if the session expired."""
         if self.sid:
             html = await do()
             if not is_login_page(html):
@@ -245,7 +250,7 @@ class SPCSession:
     async def get_arm_state(self):
         """Fetch current global arm state."""
         async def do():
-            url = f"/secure.htm?session={self.sid}&page=system_summary&language=0"
+            url = self._get_secure_url("system_summary")
             resp = await self.client.get(url)
             return self._get_html(resp)
 
@@ -264,7 +269,7 @@ class SPCSession:
             raise SPCCommandError(f"{arm_state}: unknown arm state")
 
         async def do():
-            url = f"/secure.htm?session={self.sid}&page=system_summary&language=0&action=update"
+            url = self._get_secure_url("system_summary", update=True)
             resp = await self.client.post(url, data=data)
             return self._get_html(resp)
 
@@ -277,9 +282,26 @@ class SPCSession:
     async def get_zones(self):
         """Fetch a list of zones."""
         async def do():
-            url = f"/secure.htm?session={self.sid}&page=status_zones&language=0"
+            url = self._get_secure_url("status_zones")
             resp = await self.client.get(url)
             return self._get_html(resp)
 
         html = await self._do_with_login(do)
         return list(parse_zones(html))
+
+    async def set_zone_inhibit(self, zone_id, inhibit):
+        """Inhibit/deinhibit a zone."""
+        if inhibit:
+            data = {f"inhibit{zone_id}": "Inhibit"}
+        else:
+            data = {f"uninhibit{zone_id}": "Deinhibit"}
+
+        async def do():
+            url = self._get_secure_url("status_zones", update=True)
+            url += "&zone=1"  # XXX webui always sends this for some reason
+            resp = await self.client.post(url, data=data)
+            return self._get_html(resp)
+
+        html = await self._do_with_login(do)
+        return next((zone for zone in parse_zones(html)
+                     if zone["zone_id"] == zone_id), None)
