@@ -8,7 +8,7 @@ from .const import DOMAIN
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up SPC zone status sensors from a config entry."""
+    """Set up SPC sensor entities from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
 
     coordinator = data["coordinator"]

@@ -26,7 +26,7 @@ DEVICE_CLASS = {
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up SPC binary sensor entity from a config entry."""
+    """Set up SPC binary sensor entities from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
 
     coordinator = data["coordinator"]

@@ -7,7 +7,7 @@ from .spc import SPCError
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up SPC zone inhibit switches from a config entry."""
+    """Set up SPC switch entities from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
 
     coordinator = data["coordinator"]
