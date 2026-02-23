@@ -53,7 +53,6 @@ class SPCZoneInputOpen(CoordinatorEntity, BinarySensorEntity):
         super().__init__(coordinator)
 
         zone_id = zone["zone_id"]
-        zone_name = zone["zone_name"]
         zone_type = zone["zone_type"]
 
         self._zone_id = zone_id

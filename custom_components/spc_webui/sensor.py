@@ -44,7 +44,6 @@ class SPCZoneStatus(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         zone_id = zone["zone_id"]
-        zone_name = zone["zone_name"]
 
         self._zone_id = zone_id
         self._attr_name = "Status"
